@@ -1,0 +1,81 @@
+pipeline {
+    agent any
+
+    stages {
+
+        stage('Clone Code from SCM') {
+            steps {
+                echo 'Cloning code from GitHub'
+                git branch: 'main', changelog: false, url: 'https://github.com/Spytroxx/html.git'
+            }
+        }
+
+        stage('Locate index file') {
+            steps {
+                echo 'Locating index file path...'
+                sh '''
+                    echo "Workspace:"
+                    pwd
+                    echo "Workspace content:"
+                    ls -R
+                    echo "Index.html location:"
+                    find . -name "index.html"
+                '''
+            }
+        }
+
+        stage('Send Index file to Ansible Server') {
+            steps {
+                echo 'Sending index file to Ansible Server...'
+                sshagent(['ansible']) {
+                    sh '''
+                        FILE=$(find . -name index.html | head -n 1)
+                        echo "Copying $FILE to Ansible server..."
+
+                        # Copy to ansible home first
+                        scp -o StrictHostKeyChecking=no $FILE ansible@172.31.5.86:~/index.html
+
+                        # Move to /etc/ansible/playbooks/ using sudo
+                        ssh -o StrictHostKeyChecking=no ansible@172.31.5.86 "sudo cp ~/index.html /etc/ansible/playbooks/index.html"
+                    '''
+                }
+            }
+        }
+
+        stage('Run Ansible Playbook') {
+            steps {
+                echo 'Executing Ansible Playbook on Ansible Server...'
+                sshagent(['ansible']) {
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ansible@172.31.5.86 "ansible-playbook /etc/ansible/playbooks/playbook1.yml"
+                    '''
+                }
+            }
+        }
+    }
+}
+
+
+playbook file on ansible server
+
+---
+- hosts: all
+  become: true
+
+  tasks:
+    - name: Install Httpd
+      yum:
+        name: httpd
+        state: present
+
+    - name: Copy index.html
+      copy:
+        src: index.html
+        dest: /var/www/html/index.html
+
+    - name: Start Httpd Server
+      service:
+        name: httpd
+        state: started
+...
+
